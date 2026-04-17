@@ -1,0 +1,151 @@
+# ============================================================
+# Deployment — Templated for Multi-Environment
+# ============================================================
+# Compare to the original k8s/deployment.yaml:
+#   BEFORE: replicas, image, resources, env vars all hardcoded
+#   AFTER:  everything injected from values files
+#
+# Key templated fields:
+#   replicas:     dev=1, prod=3
+#   image.tag:    set by Jenkins on each build (--set image.tag=v42)
+#   resources:    dev=small, prod=large
+#   env vars:     dev bucket vs prod bucket, dev KMS vs prod KMS
+#   IRSA role:    dev IAM role vs prod IAM role
+#
+# Security settings are NOT templated — they're the same in
+# every environment. You never relax security for dev.
+# ============================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "securegenai.fullname" . }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "securegenai.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  # Only set replicas if autoscaling is disabled.
+  # When HPA is active, it controls replica count —
+  # setting it here would conflict with HPA decisions.
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+
+  selector:
+    matchLabels:
+      {{- include "securegenai.selectorLabels" . | nindent 6 }}
+
+  # Rolling update strategy — zero-downtime deploys
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+
+  template:
+    metadata:
+      labels:
+        {{- include "securegenai.selectorLabels" . | nindent 8 }}
+      # Prometheus scrape annotations
+      annotations:
+        prometheus.io/scrape: {{ .Values.prometheus.scrape | quote }}
+        prometheus.io/port: {{ .Values.prometheus.port | quote }}
+        prometheus.io/path: {{ .Values.prometheus.path | quote }}
+    spec:
+      # ── Service Account (IRSA) ─────────────────────────────
+      serviceAccountName: {{ include "securegenai.serviceAccountName" . }}
+
+      # ── Pod Security Context ───────────────────────────────
+      # These are the SAME in every environment — security is
+      # never relaxed. Non-root, seccomp, fixed UID.
+      securityContext:
+        runAsUser: {{ .Values.securityContext.pod.runAsUser }}
+        runAsGroup: {{ .Values.securityContext.pod.runAsGroup }}
+        fsGroup: {{ .Values.securityContext.pod.fsGroup }}
+        runAsNonRoot: {{ .Values.securityContext.pod.runAsNonRoot }}
+        seccompProfile:
+          type: {{ .Values.securityContext.pod.seccompProfile.type }}
+
+      containers:
+        - name: {{ include "securegenai.name" . }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.service.targetPort }}
+              protocol: TCP
+
+          # ── Container Security Context ───────────────────
+          securityContext:
+            allowPrivilegeEscalation: {{ .Values.securityContext.container.allowPrivilegeEscalation }}
+            readOnlyRootFilesystem: {{ .Values.securityContext.container.readOnlyRootFilesystem }}
+            capabilities:
+              drop:
+                {{- toYaml .Values.securityContext.container.capabilities.drop | nindent 16 }}
+
+          # ── Environment Variables ────────────────────────
+          # These are the values that DIFFER between environments.
+          # dev gets dev bucket/KMS/table, prod gets prod versions.
+          env:
+            - name: SECUREGENAI_ENVIRONMENT
+              value: {{ .Values.app.environment | quote }}
+            - name: SECUREGENAI_LOG_LEVEL
+              value: {{ .Values.app.logLevel | quote }}
+            - name: SECUREGENAI_AWS_REGION
+              value: {{ .Values.app.awsRegion | quote }}
+            - name: SECUREGENAI_S3_BUCKET_NAME
+              value: {{ .Values.app.s3BucketName | quote }}
+            - name: SECUREGENAI_KMS_KEY_ID
+              value: {{ .Values.app.kmsKeyId | quote }}
+            - name: SECUREGENAI_BEDROCK_MODEL_ID
+              value: {{ .Values.app.bedrockModelId | quote }}
+            - name: SECUREGENAI_DYNAMODB_TABLE_NAME
+              value: {{ .Values.app.dynamodbTableName | quote }}
+
+          # ── Resource Limits ──────────────────────────────
+          # dev=small (save cost), prod=large (handle load)
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+
+          # ── Health Probes ────────────────────────────────
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.probes.liveness.path }}
+              port: {{ .Values.probes.liveness.port }}
+            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.liveness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.probes.readiness.path }}
+              port: {{ .Values.probes.readiness.port }}
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.readiness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+
+          # ── Volume Mounts ────────────────────────────────
+          # Writable /tmp for Python temp files (root FS is read-only)
+          volumeMounts:
+            - name: tmp-dir
+              mountPath: /tmp
+
+      # ── Volumes ──────────────────────────────────────────
+      volumes:
+        - name: tmp-dir
+          emptyDir:
+            medium: Memory
+            sizeLimit: "64Mi"
+
+      # ── Topology Spread ──────────────────────────────────
+      # Spread pods across nodes for HA. Enabled in prod,
+      # disabled in dev (dev may have fewer nodes).
+      {{- if .Values.topologySpread.enabled }}
+      topologySpreadConstraints:
+        - maxSkew: {{ .Values.topologySpread.maxSkew }}
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              {{- include "securegenai.selectorLabels" . | nindent 14 }}
+      {{- end }}

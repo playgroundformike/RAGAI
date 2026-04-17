@@ -1,0 +1,54 @@
+# ============================================================
+# SecureGenAI — Development Environment Overrides
+# ============================================================
+#
+# Usage:
+#   helm upgrade securegenai ./helm/securegenai \
+#     -f ./helm/securegenai/values-dev.yaml \
+#     --set image.tag=v42-abc123
+#
+# Dev philosophy:
+#   - Fewer replicas (save cost)
+#   - Smaller resources (dev workloads are lighter)
+#   - Debug logging (more visibility for development)
+#   - Autoscaling disabled (predictable behavior for debugging)
+#   - Same security posture (non-root, read-only FS, drop caps)
+#     Security settings are NEVER relaxed in dev — you test
+#     the same security model you'll run in production.
+# ============================================================
+
+# Single replica — no need for HA in dev
+replicaCount: 1
+
+# Dev image tag — overridden by Jenkins on each build
+image:
+  tag: latest
+
+# No autoscaling in dev — predictable behavior for debugging
+autoscaling:
+  enabled: false
+
+# Smaller resource allocation — dev workloads are lighter
+resources:
+  requests:
+    cpu: "100m"
+    memory: "128Mi"
+  limits:
+    cpu: "500m"
+    memory: "256Mi"
+
+# Dev-specific IRSA role — scoped to dev AWS resources only
+serviceAccount:
+  roleArn: "arn:aws:iam::ACCOUNT_ID:role/securegenai-app-role-dev"
+
+# Dev application config — debug logging, dev-specific AWS resources
+app:
+  environment: development
+  logLevel: DEBUG
+  s3BucketName: securegenai-documents-dev
+  kmsKeyId: alias/securegenai-document-key-dev
+  dynamodbTableName: securegenai-document-registry-dev
+
+# Topology spread disabled — dev likely has fewer nodes
+topologySpread:
+  enabled: false

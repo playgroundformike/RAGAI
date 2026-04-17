@@ -1,0 +1,80 @@
+# ============================================================
+# Horizontal Pod Autoscaler (HPA)
+# ============================================================
+# Automatically scales pods based on CPU and memory utilization.
+#
+# How it works:
+#   1. HPA queries the metrics server every 15 seconds
+#   2. It calculates average CPU/memory across all pods
+#   3. If average exceeds the target, it creates more pods
+#   4. If average drops below target, it removes pods
+#   5. Respects minReplicas and maxReplicas boundaries
+#
+# Why HPA for this project:
+#   Bedrock queries are CPU/memory intensive (10-30 seconds each).
+#   During peak usage, multiple concurrent queries can exhaust
+#   pod resources. HPA scales out to handle the load, then
+#   scales back down to save cost when traffic drops.
+#
+# IMPORTANT: When HPA is enabled, the Deployment must NOT set
+# spec.replicas — HPA controls replica count. That's why the
+# deployment template has: {{`{{- if not .Values.autoscaling.enabled }}`}}
+#
+# Enabled in prod (handle traffic spikes), disabled in dev
+# (predictable behavior for debugging).
+#
+# NIST 800-53: SC-5 (Denial of Service Protection) — auto-scaling
+# absorbs traffic spikes that would otherwise overwhelm fixed pods.
+# ============================================================
+{{- if .Values.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "securegenai.fullname" . }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "securegenai.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "securegenai.fullname" . }}
+
+  minReplicas: {{ .Values.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.maxReplicas }}
+
+  metrics:
+    # Scale based on CPU utilization
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.targetCPUUtilizationPercentage }}
+
+    # Scale based on memory utilization
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.targetMemoryUtilizationPercentage }}
+
+  # Scaling behavior — controls how aggressively HPA scales
+  behavior:
+    # Scale up quickly when under load
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+    # Scale down slowly to prevent flapping
+    # Wait 5 minutes of low usage before removing pods
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 120
+{{- end }}

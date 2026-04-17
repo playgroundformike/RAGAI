@@ -1,0 +1,57 @@
+# ============================================================
+# SecureGenAI — Production Environment Overrides
+# ============================================================
+#
+# Usage:
+#   helm upgrade securegenai ./helm/securegenai \
+#     --namespace securegenai \
+#     -f ./helm/securegenai/values-prod.yaml \
+#     --set image.tag=v41-def456
+#
+# Prod philosophy:
+#   - Multiple replicas for high availability
+#   - Autoscaling enabled to handle traffic spikes
+#   - Larger resource limits (Bedrock queries are memory-intensive)
+#   - INFO logging only (no debug data in prod logs)
+#   - Topology spread enforced (pods on different nodes/AZs)
+#   - Same security posture as dev (never weaker in prod)
+# ============================================================
+
+# 3 replicas for high availability across AZs
+replicaCount: 3
+
+# Autoscaling enabled in prod — handles traffic spikes
+# without manual intervention. Scales based on CPU and memory.
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+# Larger resources — Bedrock queries can spike memory
+# during large document processing
+resources:
+  requests:
+    cpu: "500m"
+    memory: "512Mi"
+  limits:
+    cpu: "2000m"
+    memory: "1Gi"
+
+# Prod IRSA role — scoped to prod AWS resources
+serviceAccount:
+  roleArn: "arn:aws:iam::ACCOUNT_ID:role/securegenai-app-role-prod"
+
+# Prod application config — INFO logging, prod AWS resources
+app:
+  environment: production
+  logLevel: INFO
+  s3BucketName: securegenai-documents-prod
+  kmsKeyId: alias/securegenai-document-key-prod
+  dynamodbTableName: securegenai-document-registry-prod
+
+# Spread pods across nodes and AZs
+topologySpread:
+  enabled: true
+  maxSkew: 1

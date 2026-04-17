@@ -319,15 +319,19 @@ else:
         }
 
         // ════════════════════════════════════════════════════
-        // Stage 7: Deploy to EKS
+        // Stage 7: Deploy to EKS via Helm
         // ════════════════════════════════════════════════════
         // CM-3: Configuration Change Control
-        // Updates the Kubernetes deployment with the new image.
-        // kubectl set image performs a rolling update — old pods
-        // are replaced one at a time, so there's zero downtime.
+        // Deploys using Helm instead of raw kubectl. Helm provides:
+        //   - Templated manifests (one chart, multiple environments)
+        //   - Release versioning (every deploy is a numbered release)
+        //   - Instant rollback (helm rollback if deploy fails)
+        //   - Atomic deploys (--atomic: auto-rollback on failure)
         //
-        // The rollout status check waits for the deployment to
-        // complete and fails the pipeline if pods crash-loop.
+        // This is the Kubernetes equivalent of Terragrunt:
+        //   - Same templates for every environment
+        //   - Only the values files differ (dev vs prod)
+        //   - No copy-pasting manifests between environments
         stage('Deploy to EKS') {
             when {
                 // Only deploy from main branch — feature branches
@@ -341,28 +345,45 @@ else:
                         --name ${EKS_CLUSTER} \
                         --region ${AWS_REGION}
 
-                    echo "══ Deploying to ${K8S_NAMESPACE} ══"
+                    echo "══ Deploying to ${K8S_NAMESPACE} via Helm ══"
                     echo "Image: ${IMAGE_NAME}:${BUILD_TAG}"
 
-                    # Update the deployment's container image.
-                    # This triggers a rolling update — K8s replaces pods
-                    # one at a time, checking readiness probes before
-                    # moving to the next pod.
-                    kubectl set image deployment/securegenai-app \
-                        securegenai-app=${IMAGE_NAME}:${BUILD_TAG} \
-                        -n ${K8S_NAMESPACE}
-
-                    echo "══ Waiting for rollout to complete ══"
-                    # --timeout=300s: fail if rollout takes > 5 minutes
-                    # This catches crash-looping pods (bad config, missing secrets)
-                    kubectl rollout status deployment/securegenai-app \
-                        -n ${K8S_NAMESPACE} \
-                        --timeout=300s
+                    # helm upgrade --install:
+                    #   - If the release doesn't exist, install it
+                    #   - If it exists, upgrade it to the new version
+                    #
+                    # --values: inject environment-specific config
+                    #   (prod bucket, prod KMS key, 3 replicas, etc.)
+                    #
+                    # --set image.tag: override the image tag with
+                    #   the specific build tag from this pipeline run
+                    #
+                    # --atomic: if the deploy fails (pods crash-loop,
+                    #   readiness probes fail), Helm automatically
+                    #   rolls back to the previous release. No manual
+                    #   intervention needed.
+                    #
+                    # --timeout: wait up to 5 minutes for pods to
+                    #   become ready before declaring failure
+                    #
+                    # --history-max: keep last 10 releases for rollback
+                    #   (older releases are garbage collected)
+                    helm upgrade --install securegenai \
+                        ./helm/securegenai \
+                        --namespace ${K8S_NAMESPACE} \
+                        --values ./helm/securegenai/values-prod.yaml \
+                        --set image.tag=${BUILD_TAG} \
+                        --set image.repository=${IMAGE_NAME} \
+                        --atomic \
+                        --timeout 5m \
+                        --history-max 10
 
                     echo "══ Deployment verification ══"
-                    kubectl get pods -n ${K8S_NAMESPACE} -l app=securegenai-app
+                    helm status securegenai -n ${K8S_NAMESPACE}
                     echo ""
-                    echo "✅ Deployment complete: ${BUILD_TAG}"
+                    kubectl get pods -n ${K8S_NAMESPACE} -l app=securegenai
+                    echo ""
+                    echo "✅ Helm deployment complete: ${BUILD_TAG}"
                 """
             }
         }

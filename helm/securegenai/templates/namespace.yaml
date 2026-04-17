@@ -1,0 +1,20 @@
+# ============================================================
+# Namespace — with Pod Security Standards
+# ============================================================
+# Compare to the original k8s/namespace.yaml:
+#   BEFORE: pod-security level hardcoded to "restricted"
+#   AFTER:  pod-security level is {{ .Values.namespace.podSecurityLevel }}
+#           so you could test with "baseline" in dev if needed
+# ============================================================
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.namespace.name }}
+  labels:
+    {{- include "securegenai.labels" . | nindent 4 }}
+    # Pod Security Standards — enforce the configured security profile.
+    # "restricted" prevents pods from running as root, using host
+    # networking, or escalating privileges.
+    pod-security.kubernetes.io/enforce: {{ .Values.namespace.podSecurityLevel }}
+    pod-security.kubernetes.io/audit: {{ .Values.namespace.podSecurityLevel }}
+    pod-security.kubernetes.io/warn: {{ .Values.namespace.podSecurityLevel }}

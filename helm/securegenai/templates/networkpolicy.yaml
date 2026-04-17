@@ -1,0 +1,54 @@
+# ============================================================
+# Network Policy — Microsegmentation
+# ============================================================
+# SC-7 (Boundary Protection): restrict pod-to-pod traffic.
+# Only allow ingress from the ingress controller namespace,
+# and egress to DNS + HTTPS for AWS API calls.
+#
+# Network policy is the same in dev and prod — security
+# boundaries are never relaxed.
+# ============================================================
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "securegenai.fullname" . }}
+  namespace: {{ .Values.namespace.name }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "securegenai.selectorLabels" . | nindent 6 }}
+
+  policyTypes:
+    - Ingress
+    - Egress
+
+  ingress:
+    # Allow inbound traffic only from the ingress controller
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.ingressNamespace }}
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: {{ .Values.networkPolicy.ingressPort }}
+
+  egress:
+    # Allow DNS resolution (required for AWS endpoint discovery)
+    - to: []
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+    # Allow HTTPS outbound for AWS API calls
+    # (S3, KMS, Bedrock, DynamoDB, STS for IRSA)
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 443
+{{- end }}

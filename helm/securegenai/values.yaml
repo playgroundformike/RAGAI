@@ -1,0 +1,134 @@
+# ============================================================
+# SecureGenAI Helm Chart — Default Values
+# ============================================================
+#
+# This file contains sensible defaults. Environment-specific
+# overrides go in values-dev.yaml and values-prod.yaml.
+#
+# Usage:
+#   helm install securegenai ./helm/securegenai                     # uses defaults
+#   helm install securegenai ./helm/securegenai -f values-dev.yaml  # dev overrides
+#   helm install securegenai ./helm/securegenai -f values-prod.yaml # prod overrides
+#   helm upgrade securegenai ./helm/securegenai --set image.tag=v42 # override one value
+#
+# This is the Kubernetes equivalent of Terragrunt's terragrunt.hcl:
+#   - Same templates for every environment
+#   - Only the values differ
+# ============================================================
+
+# ── Namespace ─────────────────────────────────────────────────
+namespace:
+  name: securegenai
+  # Pod Security Standards level: restricted, baseline, or privileged
+  # restricted = most secure (no root, no host networking, drop all caps)
+  podSecurityLevel: restricted
+
+# ── Container Image ───────────────────────────────────────────
+image:
+  # ECR repository URL — ACCOUNT_ID is replaced per environment
+  repository: ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/securegenai-app
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# ── Replicas & Scaling ────────────────────────────────────────
+replicaCount: 2
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 6
+  # Scale based on CPU utilization — when average CPU across pods
+  # exceeds this threshold, HPA creates additional pods.
+  targetCPUUtilizationPercentage: 70
+  # Scale based on memory — Bedrock responses can spike memory
+  # during large document processing.
+  targetMemoryUtilizationPercentage: 80
+
+# ── Service Account (IRSA) ────────────────────────────────────
+serviceAccount:
+  name: securegenai-app
+  # IAM role ARN for IRSA — this is what gives the pod AWS permissions.
+  # Different per environment because dev and prod have separate IAM roles
+  # with different resource scopes (dev bucket vs prod bucket).
+  roleArn: "arn:aws:iam::ACCOUNT_ID:role/securegenai-app-role"
+
+# ── Container Resources ──────────────────────────────────────
+resources:
+  requests:
+    cpu: "250m"
+    memory: "256Mi"
+  limits:
+    cpu: "1000m"
+    memory: "512Mi"
+
+# ── Security Context ─────────────────────────────────────────
+# These settings are non-negotiable for DoD compliance.
+# They match the Dockerfile (non-root UID 1001) and satisfy
+# STIG requirements + Pod Security Standards restricted level.
+securityContext:
+  pod:
+    runAsUser: 1001
+    runAsGroup: 1001
+    fsGroup: 1001
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  container:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+
+# ── Application Configuration ────────────────────────────────
+# These map to the SECUREGENAI_ environment variables in the app.
+app:
+  environment: production
+  logLevel: INFO
+  awsRegion: us-east-1
+  s3BucketName: securegenai-documents
+  kmsKeyId: alias/securegenai-document-key
+  bedrockModelId: "anthropic.claude-3-sonnet-20240229-v1:0"
+  dynamodbTableName: securegenai-document-registry
+
+# ── Service ───────────────────────────────────────────────────
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8000
+
+# ── Health Probes ─────────────────────────────────────────────
+probes:
+  liveness:
+    path: /health
+    port: 8000
+    initialDelaySeconds: 15
+    periodSeconds: 30
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readiness:
+    path: /health
+    port: 8000
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+# ── Network Policy ────────────────────────────────────────────
+networkPolicy:
+  enabled: true
+  # Allow ingress from the ingress-nginx namespace only
+  ingressNamespace: ingress-nginx
+  ingressPort: 8000
+
+# ── Prometheus Monitoring ─────────────────────────────────────
+prometheus:
+  scrape: true
+  port: 8000
+  path: /metrics
+
+# ── Topology Spread ───────────────────────────────────────────
+# Spread pods across different nodes for high availability.
+topologySpread:
+  enabled: true
+  maxSkew: 1

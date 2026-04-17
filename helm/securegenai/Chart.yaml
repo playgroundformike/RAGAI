@@ -1,0 +1,22 @@
+# ============================================================
+# Helm Chart Metadata
+# ============================================================
+# This file identifies the chart — name, version, description.
+#
+# Two version fields:
+#   version:    The CHART version (changes when you modify templates/values)
+#   appVersion: The APPLICATION version (changes when you build a new image)
+#
+# In CI/CD, Jenkins would update appVersion on each build.
+# ============================================================
+apiVersion: v2
+name: securegenai
+description: >-
+  SecureGenAI Document Assistant — a secure, DoD-aligned GenAI
+  document Q&A system deployed on EKS with IRSA, KMS encryption,
+  and NIST 800-53 compliance controls.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+maintainers:
+  - name: SecureGenAI Team

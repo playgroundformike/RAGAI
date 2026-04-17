@@ -63,6 +63,8 @@ CI/CD Pipeline (Jenkins):
 | Encryption | KMS (CMK) | Customer-managed encryption keys |
 | Container | Docker (multi-stage) | Non-root, minimal attack surface |
 | Orchestration | EKS (Kubernetes) | Pod scheduling, scaling, self-healing |
+| Package Management | Helm | Templated K8s manifests, release versioning, rollback |
+| Auto-Scaling | HPA | Horizontal Pod Autoscaler (CPU/memory-based) |
 | IaC | Terraform + Terragrunt | Reproducible infrastructure across environments |
 | CI/CD | Jenkins | Gated pipeline with security scanning |
 | Vulnerability Scan | Trivy | Container CVE detection |
@@ -89,13 +91,20 @@ CI/CD Pipeline (Jenkins):
 ├── tests/                        # Unit tests (16 tests, 0.9s)
 ├── Dockerfile                    # Multi-stage build, non-root, hardened
 ├── docker-compose.yml            # Local dev stack (app + LocalStack)
-├── Jenkinsfile                   # 7-stage CI/CD with security gates
-├── k8s/                          # Kubernetes manifests
-│   ├── namespace.yaml            # Pod Security Standards (restricted)
-│   ├── serviceaccount.yaml       # IRSA bridge (K8s SA → IAM role)
-│   ├── deployment.yaml           # Hardened pod spec (read-only FS, no caps)
-│   ├── service.yaml              # ClusterIP service
-│   └── networkpolicy.yaml        # Microsegmentation (ingress/egress rules)
+├── Jenkinsfile                   # 7-stage CI/CD with security gates + Helm deploy
+├── helm/securegenai/             # Helm chart (templated K8s manifests)
+│   ├── Chart.yaml                # Chart metadata (name, version)
+│   ├── values.yaml               # Default values
+│   ├── values-dev.yaml           # Dev overrides (1 replica, small resources)
+│   ├── values-prod.yaml          # Prod overrides (3 replicas, HPA, large resources)
+│   └── templates/                # Templated Kubernetes manifests
+│       ├── _helpers.tpl          # Reusable template helpers (labels, names)
+│       ├── namespace.yaml        # Pod Security Standards (restricted)
+│       ├── serviceaccount.yaml   # IRSA bridge (K8s SA → IAM role)
+│       ├── deployment.yaml       # Hardened pod spec (read-only FS, no caps)
+│       ├── service.yaml          # ClusterIP service
+│       ├── networkpolicy.yaml    # Microsegmentation (ingress/egress rules)
+│       └── hpa.yaml              # Horizontal Pod Autoscaler (prod only)
 ├── terraform/                    # Infrastructure as Code
 │   ├── modules/                  # Reusable Terraform modules
 │   │   ├── vpc/                  # VPC + subnets + NAT + flow logs
