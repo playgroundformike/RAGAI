@@ -1,0 +1,57 @@
+# ============================================================
+# SI-6: Security Function Verification — AIDE
+# ============================================================
+# AIDE (Advanced Intrusion Detection Environment) creates a
+# database of file hashes and metadata. On subsequent runs,
+# it compares the current filesystem against the baseline.
+# Any unexpected changes (modified binaries, new SUID files,
+# changed configs) are flagged.
+#
+# This catches:
+#   - Rootkits that modify system binaries
+#   - Unauthorized configuration changes
+#   - Backdoors placed in system directories
+#   - Tampered audit logs
+# ============================================================
+
+---
+- name: "SI-6 | Install AIDE"
+  ansible.builtin.dnf:
+    name: aide
+    state: present
+
+- name: "SI-6 | Initialize AIDE database"
+  ansible.builtin.command:
+    cmd: aide --init
+    creates: /var/lib/aide/aide.db.new.gz
+  # 'creates' makes this idempotent — if the DB already exists,
+  # Ansible skips this step. aide --init takes several minutes
+  # because it hashes every file on the system.
+
+- name: "SI-6 | Move AIDE database to active location"
+  ansible.builtin.copy:
+    src: /var/lib/aide/aide.db.new.gz
+    dest: /var/lib/aide/aide.db.gz
+    remote_src: true
+    mode: '0600'
+    owner: root
+    group: root
+  # AIDE looks for aide.db.gz (the baseline) and compares it
+  # against the current filesystem. The .new.gz file is the
+  # freshly generated baseline that needs to be renamed.
+
+- name: "SI-6 | Schedule daily AIDE integrity check"
+  ansible.builtin.cron:
+    name: "AIDE integrity check"
+    minute: "{{ stig_aide_check_schedule.split()[0] }}"
+    hour: "{{ stig_aide_check_schedule.split()[1] }}"
+    day: "{{ stig_aide_check_schedule.split()[2] }}"
+    month: "{{ stig_aide_check_schedule.split()[3] }}"
+    weekday: "{{ stig_aide_check_schedule.split()[4] }}"
+    user: root
+    job: "/usr/sbin/aide --check | /usr/bin/logger -t aide-check"
+  # Runs daily at 5 AM (configurable in defaults).
+  # Output is sent to syslog via logger, which forwards to
+  # CloudWatch/Splunk for centralized alerting.
+  # If AIDE detects changes, the syslog entry will contain
+  # details of what changed — security team investigates.

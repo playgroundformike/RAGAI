@@ -1,0 +1,235 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "description": "SecureGenAI Document Assistant — Application Overview",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "links": [],
+  "panels": [
+    {
+      "title": "Request Rate (req/s)",
+      "description": "HTTP requests per second by status code",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(rate(securegenai_http_requests_total[5m])) by (status_code)",
+          "legendFormat": "{{ status_code }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          },
+          "unit": "reqps"
+        }
+      }
+    },
+    {
+      "title": "Request Latency (p50 / p95 / p99)",
+      "description": "HTTP request duration percentiles",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(securegenai_http_request_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(securegenai_http_request_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p95"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(securegenai_http_request_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p99"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2
+          },
+          "unit": "s"
+        }
+      }
+    },
+    {
+      "title": "Error Rate (%)",
+      "description": "Percentage of requests returning 5xx errors",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "sum(rate(securegenai_http_requests_total{status_code=~\"5..\"}[5m])) / sum(rate(securegenai_http_requests_total[5m])) * 100"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 5 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Active Requests",
+      "description": "Currently in-flight HTTP requests",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 8 },
+      "targets": [
+        {
+          "expr": "securegenai_http_requests_in_progress"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 10 },
+              { "color": "red", "value": 20 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Uptime",
+      "description": "Available pods / desired pods",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 8 },
+      "targets": [
+        {
+          "expr": "kube_deployment_status_replicas_available{namespace=\"securegenai\",deployment=\"securegenai-app\"} / kube_deployment_spec_replicas{namespace=\"securegenai\",deployment=\"securegenai-app\"} * 100"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 50 },
+              { "color": "green", "value": 100 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Document Uploads",
+      "description": "Document upload rate by content type",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 12 },
+      "targets": [
+        {
+          "expr": "sum(rate(securegenai_document_uploads_total[5m])) by (content_type, status)",
+          "legendFormat": "{{ content_type }} ({{ status }})"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "bars", "fillOpacity": 50 },
+          "unit": "ops"
+        }
+      }
+    },
+    {
+      "title": "Bedrock Query Latency",
+      "description": "AI model response time percentiles",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 12 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(securegenai_bedrock_query_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(securegenai_bedrock_query_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p95"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2 },
+          "unit": "s"
+        }
+      }
+    },
+    {
+      "title": "Bedrock Token Usage",
+      "description": "Token consumption rate (input vs output)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 12 },
+      "targets": [
+        {
+          "expr": "sum(rate(securegenai_bedrock_tokens_total[5m])) by (direction)",
+          "legendFormat": "{{ direction }} tokens/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "fillOpacity": 20 },
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "title": "Pod Memory Usage",
+      "description": "Container memory vs limit",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "targets": [
+        {
+          "expr": "container_memory_working_set_bytes{namespace=\"securegenai\",container=\"securegenai-app\"}",
+          "legendFormat": "{{ pod }} usage"
+        },
+        {
+          "expr": "container_spec_memory_limit_bytes{namespace=\"securegenai\",container=\"securegenai-app\"}",
+          "legendFormat": "{{ pod }} limit"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2 },
+          "unit": "bytes"
+        }
+      }
+    },
+    {
+      "title": "Pod CPU Usage",
+      "description": "Container CPU utilization",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "targets": [
+        {
+          "expr": "rate(container_cpu_usage_seconds_total{namespace=\"securegenai\",container=\"securegenai-app\"}[5m])",
+          "legendFormat": "{{ pod }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "fillOpacity": 10 },
+          "unit": "short"
+        }
+      }
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["securegenai", "application"],
+  "templating": { "list": [] },
+  "time": { "from": "now-3h", "to": "now" },
+  "title": "SecureGenAI Document Assistant",
+  "uid": "securegenai-overview"
+}

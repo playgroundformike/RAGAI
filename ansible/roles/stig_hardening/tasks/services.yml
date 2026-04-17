@@ -1,0 +1,49 @@
+# ============================================================
+# CM-7: Least Functionality — Service Minimization
+# ============================================================
+# Every running service is an attack surface. EKS worker nodes
+# only need: kubelet, containerd, SSHd, auditd, and system
+# services. Everything else gets disabled.
+# ============================================================
+
+---
+- name: "CM-7 | Disable unnecessary services"
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: false
+    state: stopped
+  loop: "{{ stig_disabled_services }}"
+  # ignore_errors because some services may not be installed
+  # on minimal AMIs. We still want to attempt disabling all of them.
+  ignore_errors: true
+  # Why each service is disabled:
+  #   bluetooth    — no Bluetooth hardware on EC2 instances
+  #   cups         — no printing from server nodes
+  #   avahi-daemon — mDNS/DNS-SD is unnecessary and a discovery risk
+  #   rpcbind      — NFS/RPC services not needed
+  #   nfs-server   — not serving NFS shares
+  #   vsftpd       — FTP is insecure; use S3 for file transfer
+  #   telnet       — unencrypted remote access; SSH only
+
+- name: "CM-7 | Ensure only essential packages are installed"
+  ansible.builtin.dnf:
+    name:
+      - telnet
+      - tftp
+      - xinetd
+    state: absent
+  ignore_errors: true
+  # Remove packages entirely, not just disable the service.
+  # An attacker who gets shell access can't start telnetd
+  # if the binary doesn't exist.
+
+- name: "CM-7 | Disable USB storage (if not needed)"
+  ansible.builtin.copy:
+    dest: /etc/modprobe.d/disable-usb-storage.conf
+    mode: '0644'
+    content: |
+      # CM-7: Disable USB mass storage to prevent data exfiltration
+      install usb-storage /bin/true
+  # This prevents loading the USB storage kernel module.
+  # On EC2 instances this is already irrelevant (no USB ports),
+  # but the STIG check still looks for it.

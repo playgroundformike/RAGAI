@@ -1,0 +1,85 @@
+# ============================================================
+# Alertmanager Configuration
+# ============================================================
+# Alertmanager receives alerts from Prometheus and handles:
+#   - Deduplication (same alert from multiple Prometheus instances)
+#   - Grouping (batch related alerts into one notification)
+#   - Silencing (suppress known/expected alerts during maintenance)
+#   - Routing (critical → PagerDuty, warning → Slack)
+#
+# In a DoD environment, alerts may also route to:
+#   - SIEM/Splunk for security event correlation
+#   - ServiceNow for incident ticket creation
+#   - ITSM system for change tracking
+# ============================================================
+
+global:
+  resolve_timeout: 5m
+
+# ── Notification Templates ───────────────────────────────────
+templates:
+  - "/etc/alertmanager/templates/*.tmpl"
+
+# ── Alert Routing ────────────────────────────────────────────
+route:
+  # Default receiver if no child route matches
+  receiver: "platform-slack"
+
+  # Group alerts by these labels — alerts with the same alertname
+  # and namespace are batched into a single notification.
+  group_by: ["alertname", "namespace"]
+
+  # Wait 30s after the first alert in a group before sending —
+  # catches a burst of related alerts and sends one notification.
+  group_wait: 30s
+
+  # Wait 5m before sending updates for an existing alert group
+  group_interval: 5m
+
+  # Wait 4h before re-sending an alert that's still firing
+  repeat_interval: 4h
+
+  # Child routes — more specific routing rules
+  child_routes:
+    # Critical alerts go to PagerDuty (wake someone up)
+    - match:
+        severity: critical
+      receiver: "platform-pagerduty"
+      repeat_interval: 1h
+
+    # Warning alerts go to Slack (check during business hours)
+    - match:
+        severity: warning
+      receiver: "platform-slack"
+      repeat_interval: 4h
+
+# ── Receivers ────────────────────────────────────────────────
+receivers:
+  - name: "platform-slack"
+    slack_configs:
+      - api_url: "https://hooks.slack.com/services/PLACEHOLDER"
+        channel: "#securegenai-alerts"
+        title: '{{ .GroupLabels.alertname }}'
+        text: >-
+          {{ range .Alerts }}
+          *{{ .Annotations.summary }}*
+          {{ .Annotations.description }}
+          {{ end }}
+        send_resolved: true
+
+  - name: "platform-pagerduty"
+    pagerduty_configs:
+      - service_key: "PLACEHOLDER_SERVICE_KEY"
+        severity: '{{ if eq .GroupLabels.severity "critical" }}critical{{ else }}warning{{ end }}'
+        description: '{{ .GroupLabels.alertname }}: {{ (index .Alerts 0).Annotations.summary }}'
+
+# ── Inhibition Rules ─────────────────────────────────────────
+# Suppress lower-severity alerts when higher-severity ones are firing.
+# Example: if PodCrashLooping fires, suppress HighErrorRate
+# (the errors are caused by the crash, not a separate issue).
+inhibit_rules:
+  - source_match:
+      severity: critical
+    target_match:
+      severity: warning
+    equal: ["alertname", "namespace"]

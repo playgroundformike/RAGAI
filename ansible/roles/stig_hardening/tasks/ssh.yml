@@ -1,0 +1,75 @@
+# ============================================================
+# AC-17: Remote Access — SSH Hardening
+# ============================================================
+# SSH is the primary remote access method for EKS worker nodes.
+# These settings enforce:
+#   - Key-only authentication (no passwords over SSH)
+#   - Strong ciphers only (FIPS-approved algorithms)
+#   - Idle session timeout (AC-11)
+#   - Root login disabled
+#   - Limited authentication attempts
+# ============================================================
+
+---
+- name: "AC-17 | Configure SSH daemon"
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+    # validate ensures sshd can parse the config before applying.
+    # If the config is invalid, the change is rolled back.
+    # Without this, a bad config could lock you out of the node.
+    validate: '/usr/sbin/sshd -t -f %s'
+  loop:
+    # Protocol 2 only — SSHv1 has known cryptographic weaknesses
+    - { regexp: '^#?Protocol', line: 'Protocol {{ stig_ssh_protocol }}' }
+
+    # Disable root login — force use of named accounts for audit trail.
+    # If root login is allowed, you can't tell WHO logged in.
+    - { regexp: '^#?PermitRootLogin', line: 'PermitRootLogin {{ stig_ssh_permit_root_login }}' }
+
+    # Key-only authentication — passwords are guessable, keys are not.
+    # STIG V-230288: The system must not allow password-only SSH login.
+    - { regexp: '^#?PasswordAuthentication', line: 'PasswordAuthentication {{ stig_ssh_password_auth }}' }
+
+    # Limit auth attempts per connection — slows brute force attacks.
+    - { regexp: '^#?MaxAuthTries', line: 'MaxAuthTries {{ stig_ssh_max_auth_tries }}' }
+
+    # Idle timeout: disconnect sessions after 10 min of inactivity (AC-11).
+    # ClientAliveInterval sends a keepalive every N seconds.
+    # ClientAliveCountMax 0 means disconnect on first missed response.
+    # Together: 600s interval + 0 retries = disconnect after 10 min idle.
+    - { regexp: '^#?ClientAliveInterval', line: 'ClientAliveInterval {{ stig_ssh_client_alive_interval }}' }
+    - { regexp: '^#?ClientAliveCountMax', line: 'ClientAliveCountMax {{ stig_ssh_client_alive_count_max }}' }
+
+    # Disable X11 forwarding — no GUI apps should run on server nodes
+    - { regexp: '^#?X11Forwarding', line: 'X11Forwarding no' }
+
+    # Disable TCP forwarding — prevents using SSH as a tunnel proxy
+    - { regexp: '^#?AllowTcpForwarding', line: 'AllowTcpForwarding no' }
+
+    # Disable empty passwords — should never be possible
+    - { regexp: '^#?PermitEmptyPasswords', line: 'PermitEmptyPasswords no' }
+
+    # Show login banner before authentication (AC-8)
+    - { regexp: '^#?Banner', line: 'Banner /etc/issue.net' }
+
+    # Use only FIPS-approved ciphers
+    - { regexp: '^#?Ciphers', line: 'Ciphers {{ stig_ssh_ciphers }}' }
+
+    # Use only FIPS-approved MACs (message authentication codes)
+    - { regexp: '^#?MACs', line: 'MACs {{ stig_ssh_macs }}' }
+
+    # Use only strong key exchange algorithms
+    - { regexp: '^#?KexAlgorithms', line: 'KexAlgorithms {{ stig_ssh_kex_algorithms }}' }
+
+    # Log authentication events at INFO level for audit
+    - { regexp: '^#?LogLevel', line: 'LogLevel INFO' }
+  notify: restart sshd
+
+- name: "AC-17 | Set SSH config file permissions"
+  ansible.builtin.file:
+    path: /etc/ssh/sshd_config
+    owner: root
+    group: root
+    mode: '0600'  # Only root can read — config contains security settings

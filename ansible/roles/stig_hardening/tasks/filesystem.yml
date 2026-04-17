@@ -1,0 +1,78 @@
+# ============================================================
+# CM-6: Configuration Settings — Filesystem Hardening
+# ============================================================
+# Filesystem hardening prevents attackers from:
+#   - Executing code from /tmp or /dev/shm (noexec)
+#   - Using SUID/SGID binaries to escalate privileges
+#   - Writing to world-writable directories
+#   - Hiding files in unexpected locations
+# ============================================================
+
+---
+- name: "CM-6 | Ensure /tmp has restrictive mount options"
+  ansible.posix.mount:
+    path: /tmp
+    src: tmpfs
+    fstype: tmpfs
+    opts: "{{ stig_tmp_mount_options }}"
+    state: mounted
+  # nodev: no device files in /tmp (prevents block device attacks)
+  # nosuid: no SUID execution from /tmp
+  # noexec: no executable code from /tmp (prevents /tmp-based exploits)
+  #
+  # Why this matters: many exploits work by writing a payload to /tmp
+  # and executing it. noexec prevents the execute step entirely.
+
+- name: "CM-6 | Ensure /dev/shm has restrictive mount options"
+  ansible.posix.mount:
+    path: /dev/shm
+    src: tmpfs
+    fstype: tmpfs
+    opts: "nodev,nosuid,noexec"
+    state: mounted
+
+- name: "CM-6 | Find world-writable files (audit only)"
+  ansible.builtin.shell: |
+    find / -xdev -type f -perm -0002 \
+      -not -path "/proc/*" \
+      -not -path "/sys/*" \
+      2>/dev/null | head -20
+  register: world_writable_files
+  changed_when: false
+  failed_when: false
+  # World-writable files can be modified by any user — potential
+  # attack vector. We audit but don't auto-fix because some
+  # system files legitimately need these permissions.
+
+- name: "CM-6 | Report world-writable files"
+  ansible.builtin.debug:
+    msg: "⚠️  World-writable files found: {{ world_writable_files.stdout_lines }}"
+  when: world_writable_files.stdout_lines | length > 0
+
+- name: "CM-6 | Find SUID/SGID binaries (audit)"
+  ansible.builtin.shell: |
+    find / -xdev \( -perm -4000 -o -perm -2000 \) -type f \
+      2>/dev/null
+  register: suid_binaries
+  changed_when: false
+  failed_when: false
+  # SUID binaries run with the file owner's permissions (usually root)
+  # regardless of who executes them. Each one is a potential privilege
+  # escalation path. We audit the list so security teams can review
+  # and remove unnecessary ones.
+
+- name: "CM-6 | Report SUID/SGID binaries"
+  ansible.builtin.debug:
+    msg: "SUID/SGID binaries on system: {{ suid_binaries.stdout_lines }}"
+
+- name: "CM-6 | Set sticky bit on world-writable directories"
+  ansible.builtin.shell: |
+    find / -xdev -type d -perm -0002 \
+      -not -path "/proc/*" \
+      -not -path "/sys/*" \
+      -exec chmod +t {} \; 2>/dev/null
+  changed_when: false
+  failed_when: false
+  # Sticky bit on a directory means only the file owner can delete
+  # files in that directory. Without it, any user could delete
+  # another user's files in a shared writable directory like /tmp.

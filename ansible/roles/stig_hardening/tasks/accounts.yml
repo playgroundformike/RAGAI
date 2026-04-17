@@ -1,0 +1,75 @@
+# ============================================================
+# IA-5: Authenticator Management — Password & Account Policy
+# AC-7: Unsuccessful Login Attempts — Account Lockout
+# ============================================================
+# Even though SSH uses key-only auth, local accounts still
+# exist and need strong password policies. These settings also
+# apply to console access (if someone has physical/KVM access).
+# ============================================================
+
+---
+- name: "IA-5 | Install password quality enforcement"
+  ansible.builtin.dnf:
+    name: libpwquality
+    state: present
+
+- name: "IA-5 | Configure password quality requirements"
+  ansible.builtin.lineinfile:
+    path: /etc/security/pwquality.conf
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+  loop:
+    # Minimum 15 characters — STIG V-230356
+    - { regexp: '^#?\s*minlen', line: 'minlen = {{ stig_password_min_length }}' }
+    # Require all 4 character classes (upper, lower, digit, special)
+    - { regexp: '^#?\s*minclass', line: 'minclass = {{ stig_password_min_classes }}' }
+    # At least 1 uppercase
+    - { regexp: '^#?\s*ucredit', line: 'ucredit = -1' }
+    # At least 1 lowercase
+    - { regexp: '^#?\s*lcredit', line: 'lcredit = -1' }
+    # At least 1 digit
+    - { regexp: '^#?\s*dcredit', line: 'dcredit = -1' }
+    # At least 1 special character
+    - { regexp: '^#?\s*ocredit', line: 'ocredit = -1' }
+    # Max 3 consecutive identical characters
+    - { regexp: '^#?\s*maxrepeat', line: 'maxrepeat = 3' }
+
+- name: "IA-5 | Configure password aging policy"
+  ansible.builtin.lineinfile:
+    path: /etc/login.defs
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+  loop:
+    # Maximum password age — force rotation every 60 days
+    - { regexp: '^PASS_MAX_DAYS', line: 'PASS_MAX_DAYS   {{ stig_password_max_days }}' }
+    # Minimum password age — prevent rapid cycling through password history
+    - { regexp: '^PASS_MIN_DAYS', line: 'PASS_MIN_DAYS   {{ stig_password_min_days }}' }
+    # Minimum length enforced at login.defs level too (belt + suspenders)
+    - { regexp: '^PASS_MIN_LEN', line: 'PASS_MIN_LEN    {{ stig_password_min_length }}' }
+    # Warn users 7 days before password expires
+    - { regexp: '^PASS_WARN_AGE', line: 'PASS_WARN_AGE   {{ stig_password_warn_days }}' }
+
+- name: "AC-7 | Configure account lockout with faillock"
+  ansible.builtin.blockinfile:
+    path: /etc/security/faillock.conf
+    create: true
+    mode: '0644'
+    block: |
+      # AC-7: Lock account after {{ stig_faillock_attempts }} failed attempts
+      # within {{ stig_faillock_interval }} seconds.
+      # Unlock after {{ stig_faillock_unlock_time }} seconds.
+      deny = {{ stig_faillock_attempts }}
+      fail_interval = {{ stig_faillock_interval }}
+      unlock_time = {{ stig_faillock_unlock_time }}
+      # Even root gets locked out — prevents brute force on root
+      even_deny_root
+      root_unlock_time = {{ stig_faillock_unlock_time }}
+
+- name: "IA-5 | Ensure umask is 077 for new user accounts"
+  ansible.builtin.lineinfile:
+    path: /etc/login.defs
+    regexp: '^UMASK'
+    line: 'UMASK           077'
+  # umask 077 means new files are created with permissions 700
+  # (owner only). This prevents other users from reading files
+  # created by a compromised account.

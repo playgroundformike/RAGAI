@@ -1,0 +1,62 @@
+# ============================================================
+# SecureGenAI — EKS Worker Node STIG Hardening Playbook
+# ============================================================
+#
+# What this does:
+#   Hardens RHEL-based EKS worker nodes to meet DISA STIG
+#   requirements. This runs AFTER the nodes join the cluster
+#   but BEFORE application pods are scheduled on them.
+#
+# When this runs:
+#   - During initial cluster provisioning (via Packer AMI build)
+#   - As a periodic compliance check (via Jenkins scheduled job)
+#   - After node group updates or AMI rotations
+#
+# Two approaches for EKS node hardening:
+#   1. Bake it into the AMI (Packer + Ansible) — preferred
+#      Build a pre-hardened AMI, use it in the EKS launch template.
+#      Nodes boot already hardened. Faster, more consistent.
+#   2. Run on live nodes (this playbook) — for drift detection
+#      SSH into running nodes and apply/verify hardening.
+#      Catches configuration drift since last AMI build.
+#
+# NIST 800-53 Controls addressed:
+#   AC-7  (Unsuccessful Login Attempts) — account lockout
+#   AC-8  (System Use Notification) — login banners
+#   AC-11 (Session Lock) — idle timeout
+#   AU-2  (Audit Events) — auditd configuration
+#   AU-3  (Content of Audit Records) — audit log detail
+#   CM-7  (Least Functionality) — disable unnecessary services
+#   IA-5  (Authenticator Management) — password policy
+#   SC-28 (Protection at Rest) — FIPS mode, filesystem encryption
+#   SI-2  (Flaw Remediation) — automatic security updates
+#   SI-6  (Security Verification) — AIDE file integrity
+# ============================================================
+
+---
+- name: STIG Hardening for EKS Worker Nodes
+  hosts: eks_workers
+  become: true  # Run as root (sudo) — hardening requires root
+  gather_facts: true  # Collect system info (OS version, IP, etc.)
+
+  vars_files:
+    - roles/stig_hardening/defaults/main.yml
+
+  roles:
+    - role: stig_hardening
+      tags: [stig, hardening]
+
+  post_tasks:
+    - name: Generate compliance report
+      ansible.builtin.shell: |
+        echo "════════════════════════════════════════"
+        echo "  STIG Hardening Complete"
+        echo "  Host: {{ inventory_hostname }}"
+        echo "  Date: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        echo "════════════════════════════════════════"
+      register: report_output
+      changed_when: false
+
+    - name: Display report
+      ansible.builtin.debug:
+        msg: "{{ report_output.stdout_lines }}"

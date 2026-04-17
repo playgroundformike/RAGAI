@@ -1,0 +1,24 @@
+# ============================================================
+# Grafana Datasource Provisioning
+# ============================================================
+# This file auto-configures Grafana to connect to Prometheus
+# on startup. Without it, you'd have to manually add the
+# datasource in the Grafana UI every time.
+#
+# In production via kube-prometheus-stack Helm chart, this
+# is handled automatically. This config demonstrates the
+# concept for the portfolio.
+# ============================================================
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      # Match Prometheus scrape interval for optimal query resolution
+      timeInterval: "15s"

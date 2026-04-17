@@ -1,0 +1,23 @@
+# ============================================================
+# Handlers — triggered by 'notify' in tasks
+# ============================================================
+# Handlers only run ONCE at the end of the play, even if
+# notified multiple times. This prevents restarting sshd
+# 15 times if 15 config lines change — it restarts once
+# after all changes are applied.
+# ============================================================
+
+---
+- name: restart sshd
+  ansible.builtin.systemd:
+    name: sshd
+    state: restarted
+  # WARNING: If SSH config is invalid, this will lock you out.
+  # That's why the SSH task uses 'validate' on the config file.
+
+- name: restart auditd
+  # auditd is special — it can't be restarted with systemctl.
+  # It must be restarted with the service command or by
+  # reloading the rules.
+  ansible.builtin.command:
+    cmd: service auditd restart

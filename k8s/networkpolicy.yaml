@@ -1,0 +1,65 @@
+# ============================================================
+# Kubernetes Network Policy
+# ============================================================
+# By default, every pod can talk to every other pod in the cluster.
+# Network policies implement microsegmentation — each pod only
+# accepts traffic from explicitly allowed sources.
+#
+# This policy says:
+#   INGRESS: Only accept traffic on port 8000 from pods with
+#            the 'ingress' label (the ALB ingress controller)
+#   EGRESS:  Allow outbound to DNS (port 53) and HTTPS (port 443)
+#            for AWS API calls (S3, KMS, Bedrock, DynamoDB)
+#
+# SC-7 (Boundary Protection): Network-level isolation between
+# pods. Even if another pod in the cluster is compromised, it
+# can't reach this application unless explicitly allowed.
+#
+# NOTE: Network policies require a CNI plugin that supports them
+# (Calico, Cilium). The default AWS VPC CNI supports policies
+# when used with Calico addon.
+# ============================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: securegenai-app
+  namespace: securegenai
+spec:
+  # Apply this policy to pods with label app=securegenai
+  podSelector:
+    matchLabels:
+      app: securegenai
+
+  # Restrict both inbound and outbound traffic
+  policyTypes:
+    - Ingress
+    - Egress
+
+  ingress:
+    # Allow inbound traffic only from the ingress controller
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8000
+
+  egress:
+    # Allow DNS resolution (required for AWS endpoint discovery)
+    - to: []
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+    # Allow HTTPS outbound for AWS API calls
+    # (S3, KMS, Bedrock, DynamoDB, STS for IRSA)
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 443

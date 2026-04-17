@@ -1,0 +1,156 @@
+# ============================================================
+# Prometheus Alert Rules
+# ============================================================
+# Alerts fire when conditions are met for a specified duration.
+# Prometheus evaluates these rules every 15s (evaluation_interval).
+# When an alert fires, it's sent to Alertmanager, which handles
+# deduplication, grouping, and notification routing.
+#
+# Alert design philosophy:
+#   - Alert on symptoms (high latency), not causes (high CPU)
+#   - Include 'for' duration to avoid flapping
+#   - Severity labels drive routing (critical → PagerDuty, warning → Slack)
+#   - Runbook links tell on-call what to do
+# ============================================================
+
+groups:
+
+  # ── Application Alerts ─────────────────────────────────────
+  - name: securegenai.application
+    rules:
+
+      # High error rate — more than 5% of requests returning 5xx
+      - alert: HighErrorRate
+        expr: |
+          (
+            sum(rate(securegenai_http_requests_total{status_code=~"5.."}[5m]))
+            /
+            sum(rate(securegenai_http_requests_total[5m]))
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "High error rate on SecureGenAI ({{ $value | humanizePercentage }})"
+          description: "More than 5% of HTTP requests are returning 5xx errors."
+          runbook: "https://wiki.internal/runbooks/securegenai-high-error-rate"
+
+      # Slow responses — p95 latency above 5 seconds
+      - alert: HighLatency
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(securegenai_http_request_duration_seconds_bucket[5m])) by (le, endpoint)
+          ) > 5
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "High p95 latency on {{ $labels.endpoint }} ({{ $value | humanizeDuration }})"
+          description: "95th percentile latency exceeds 5 seconds for 10+ minutes."
+
+      # Bedrock failures — model invocations failing
+      - alert: BedrockQueryFailures
+        expr: |
+          sum(rate(securegenai_bedrock_queries_total{status="error"}[5m]))
+            > 0.1
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Bedrock query failures detected"
+          description: "Bedrock model invocations are failing. Check IAM permissions and model availability."
+
+      # Bedrock slow — model responses taking too long
+      - alert: BedrockHighLatency
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(securegenai_bedrock_query_duration_seconds_bucket[5m])) by (le)
+          ) > 20
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Bedrock p95 latency above 20 seconds"
+          description: "Model responses are unusually slow. May indicate throttling or large documents."
+
+      # No requests at all — app may be down or unreachable
+      - alert: NoTraffic
+        expr: |
+          sum(rate(securegenai_http_requests_total[15m])) == 0
+        for: 15m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "No traffic to SecureGenAI for 15 minutes"
+          description: "The application is receiving zero requests. Check ingress, DNS, and pod health."
+
+  # ── Infrastructure Alerts ──────────────────────────────────
+  - name: securegenai.infrastructure
+    rules:
+
+      # Pod not ready — deployment has unavailable replicas
+      - alert: PodNotReady
+        expr: |
+          kube_deployment_status_replicas_unavailable{
+            namespace="securegenai",
+            deployment="securegenai-app"
+          } > 0
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "SecureGenAI pod(s) not ready"
+          description: "{{ $value }} pod(s) are unavailable. Check pod events and logs."
+
+      # Pod restart loop — CrashLoopBackOff detection
+      - alert: PodCrashLooping
+        expr: |
+          increase(kube_pod_container_status_restarts_total{
+            namespace="securegenai"
+          }[1h]) > 3
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "SecureGenAI pod crash-looping ({{ $value }} restarts/hour)"
+          description: "Pod is restarting repeatedly. Check logs for crash reason."
+
+      # High memory usage — approaching OOM kill threshold
+      - alert: HighMemoryUsage
+        expr: |
+          (
+            container_memory_working_set_bytes{
+              namespace="securegenai",
+              container="securegenai-app"
+            }
+            /
+            container_spec_memory_limit_bytes{
+              namespace="securegenai",
+              container="securegenai-app"
+            }
+          ) > 0.85
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "SecureGenAI memory usage above 85%"
+          description: "Pod is using {{ $value | humanizePercentage }} of its memory limit. Risk of OOMKill."
+
+      # Node disk pressure
+      - alert: NodeDiskPressure
+        expr: kube_node_status_condition{condition="DiskPressure",status="true"} == 1
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "EKS node {{ $labels.node }} has disk pressure"
+          description: "Node is running low on disk. Audit logs and container images may fill disk."

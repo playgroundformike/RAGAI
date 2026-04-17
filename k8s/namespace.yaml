@@ -1,0 +1,22 @@
+# ============================================================
+# Kubernetes Namespace
+# ============================================================
+# Isolates all SecureGenAI resources into their own namespace.
+# This enables:
+#   - RBAC scoped to this namespace (AC-3)
+#   - Network policies scoped to this namespace (SC-7)
+#   - Resource quotas per-namespace
+#   - Easy cleanup (delete namespace = delete everything in it)
+# ============================================================
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: securegenai
+  labels:
+    app: securegenai
+    # Pod Security Standards — enforce restricted security profile.
+    # This prevents pods from running as root, using host networking,
+    # or escalating privileges. K8s rejects non-compliant pods.
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted

@@ -1,0 +1,58 @@
+# ============================================================
+# STIG Hardening — Main Task Dispatcher
+# ============================================================
+# Each include file handles one category of hardening.
+# Tags allow running specific categories:
+#   ansible-playbook site.yml --tags ssh
+#   ansible-playbook site.yml --tags audit
+# ============================================================
+
+---
+- name: Display hardening start
+  ansible.builtin.debug:
+    msg: "Starting STIG hardening on {{ ansible_hostname }} ({{ ansible_distribution }} {{ ansible_distribution_version }})"
+
+# ── 1. System Updates (SI-2) ─────────────────────────────────
+- name: Include system updates
+  ansible.builtin.include_tasks: updates.yml
+  tags: [updates, si-2]
+
+# ── 2. SSH Hardening (AC-17) ─────────────────────────────────
+- name: Include SSH hardening
+  ansible.builtin.include_tasks: ssh.yml
+  tags: [ssh, ac-17]
+
+# ── 3. Account & Password Policy (IA-5, AC-7) ───────────────
+- name: Include account policy
+  ansible.builtin.include_tasks: accounts.yml
+  tags: [accounts, ia-5, ac-7]
+
+# ── 4. Audit Configuration (AU-2, AU-3) ─────────────────────
+- name: Include audit configuration
+  ansible.builtin.include_tasks: audit.yml
+  tags: [audit, au-2, au-3]
+
+# ── 5. Kernel Hardening (SC-7) ───────────────────────────────
+- name: Include kernel hardening
+  ansible.builtin.include_tasks: kernel.yml
+  tags: [kernel, sc-7]
+
+# ── 6. Filesystem Hardening (CM-6) ───────────────────────────
+- name: Include filesystem hardening
+  ansible.builtin.include_tasks: filesystem.yml
+  tags: [filesystem, cm-6]
+
+# ── 7. Service Minimization (CM-7) ───────────────────────────
+- name: Include service minimization
+  ansible.builtin.include_tasks: services.yml
+  tags: [services, cm-7]
+
+# ── 8. Login Banner (AC-8) ───────────────────────────────────
+- name: Include login banner
+  ansible.builtin.include_tasks: banner.yml
+  tags: [banner, ac-8]
+
+# ── 9. File Integrity Monitoring (SI-6) ──────────────────────
+- name: Include file integrity monitoring
+  ansible.builtin.include_tasks: aide.yml
+  tags: [aide, si-6]

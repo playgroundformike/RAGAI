@@ -1,0 +1,88 @@
+# ============================================================
+# STIG Hardening — Default Variables
+# ============================================================
+# These defaults implement DISA STIG requirements for RHEL 8/9.
+# Override in inventory or playbook vars for environment-specific
+# settings (e.g., dev might have shorter lockout durations).
+# ============================================================
+
+# ── SSH Hardening (AC-17: Remote Access) ─────────────────────
+stig_ssh_port: 22
+stig_ssh_permit_root_login: "no"
+stig_ssh_password_auth: "no"          # Key-only authentication
+stig_ssh_max_auth_tries: 3
+stig_ssh_client_alive_interval: 600   # 10 min idle timeout (AC-11)
+stig_ssh_client_alive_count_max: 0    # Disconnect after 1 missed keepalive
+stig_ssh_protocol: 2                  # SSHv1 is insecure
+stig_ssh_ciphers: "aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr"
+stig_ssh_macs: "hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com"
+stig_ssh_kex_algorithms: "ecdh-sha2-nistp384,ecdh-sha2-nistp521,diffie-hellman-group16-sha512"
+
+# ── Password Policy (IA-5: Authenticator Management) ─────────
+stig_password_min_length: 15
+stig_password_min_classes: 4          # Require upper, lower, digit, special
+stig_password_max_days: 60            # Force rotation every 60 days
+stig_password_min_days: 1             # Can't change password twice in one day
+stig_password_warn_days: 7
+
+# ── Account Lockout (AC-7: Unsuccessful Login Attempts) ──────
+stig_faillock_attempts: 3             # Lock after 3 failed attempts
+stig_faillock_interval: 900           # Within 15 minutes
+stig_faillock_unlock_time: 900        # Locked for 15 minutes
+
+# ── Audit Configuration (AU-2, AU-3) ─────────────────────────
+stig_auditd_max_log_file: 25          # MB per audit log file
+stig_auditd_num_logs: 10              # Number of rotated log files
+stig_auditd_space_left_action: email
+stig_auditd_admin_space_left_action: halt  # Stop system if audit disk full
+
+# ── Login Banner (AC-8: System Use Notification) ─────────────
+stig_banner_text: |
+  ╔══════════════════════════════════════════════════════════╗
+  ║  AUTHORIZED USERS ONLY                                  ║
+  ║                                                         ║
+  ║  This system is the property of the organization.       ║
+  ║  Unauthorized access is prohibited. All activity is     ║
+  ║  monitored and recorded. By accessing this system,      ║
+  ║  you consent to monitoring and agree to comply with     ║
+  ║  all applicable security policies.                      ║
+  ╚══════════════════════════════════════════════════════════╝
+
+# ── Kernel Parameters (SC-7, SC-39) ─────────────────────────
+stig_sysctl_settings:
+  # Disable IP forwarding (nodes shouldn't route traffic
+  # between networks unless explicitly configured)
+  net.ipv4.ip_forward: 1              # Exception: EKS requires this for pod networking
+  # Ignore ICMP redirects (prevents MITM route poisoning)
+  net.ipv4.conf.all.accept_redirects: 0
+  net.ipv4.conf.default.accept_redirects: 0
+  net.ipv6.conf.all.accept_redirects: 0
+  # Don't accept source-routed packets
+  net.ipv4.conf.all.accept_source_route: 0
+  net.ipv4.conf.default.accept_source_route: 0
+  # Enable TCP SYN cookies (mitigates SYN flood attacks)
+  net.ipv4.tcp_syncookies: 1
+  # Log martian packets (packets with impossible source addresses)
+  net.ipv4.conf.all.log_martians: 1
+  # Enable ASLR (Address Space Layout Randomization)
+  kernel.randomize_va_space: 2
+  # Restrict access to kernel dmesg (prevents info leakage)
+  kernel.dmesg_restrict: 1
+  # Restrict unprivileged access to kernel perf events
+  kernel.perf_event_paranoid: 2
+  # Disable core dumps for SUID programs
+  fs.suid_dumpable: 0
+
+# ── Services to Disable (CM-7: Least Functionality) ──────────
+stig_disabled_services:
+  - bluetooth
+  - cups
+  - avahi-daemon
+  - rpcbind
+  - nfs-server
+  - vsftpd
+  - telnet.socket
+
+# ── Filesystem Settings ──────────────────────────────────────
+stig_tmp_mount_options: "nodev,nosuid,noexec"  # /tmp can't have devices, SUID, or executables
+stig_aide_check_schedule: "0 5 * * *"          # Daily AIDE integrity check at 5 AM

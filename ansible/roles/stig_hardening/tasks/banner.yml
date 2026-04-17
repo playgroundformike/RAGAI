@@ -1,0 +1,40 @@
+# ============================================================
+# AC-8: System Use Notification — Login Banner
+# ============================================================
+# DoD systems MUST display an authorized-use-only banner
+# before granting access. This is a legal requirement —
+# without it, unauthorized access prosecutions can fail
+# because the attacker can claim they didn't know access
+# was restricted.
+# ============================================================
+
+---
+- name: "AC-8 | Deploy login banner to /etc/issue.net"
+  ansible.builtin.copy:
+    dest: /etc/issue.net
+    mode: '0644'
+    owner: root
+    group: root
+    content: "{{ stig_banner_text }}"
+  # /etc/issue.net is displayed by SSH before authentication.
+  # The user sees this warning BEFORE entering credentials.
+
+- name: "AC-8 | Deploy login banner to /etc/issue"
+  ansible.builtin.copy:
+    dest: /etc/issue
+    mode: '0644'
+    owner: root
+    group: root
+    content: "{{ stig_banner_text }}"
+  # /etc/issue is displayed on local console login (if applicable).
+
+- name: "AC-8 | Deploy MOTD banner"
+  ansible.builtin.copy:
+    dest: /etc/motd
+    mode: '0644'
+    owner: root
+    group: root
+    content: "{{ stig_banner_text }}"
+  # /etc/motd (Message of the Day) is displayed after login.
+  # Belt and suspenders — the user sees the banner both before
+  # and after authentication.

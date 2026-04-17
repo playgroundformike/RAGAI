@@ -1,0 +1,47 @@
+# ============================================================
+# SC-7: Boundary Protection — Kernel Hardening
+# ============================================================
+# sysctl parameters control kernel behavior for networking,
+# memory protection, and process isolation. These settings
+# are the node-level equivalent of what we did with
+# securityContext in the K8s deployment manifest.
+# ============================================================
+
+---
+- name: "SC-7 | Apply kernel hardening parameters"
+  ansible.posix.sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    sysctl_set: true
+    state: present
+    reload: true
+    sysctl_file: /etc/sysctl.d/99-stig-hardening.conf
+  loop: "{{ stig_sysctl_settings | dict2items }}"
+  # dict2items converts the sysctl_settings dict from defaults/main.yml
+  # into a list of {key: name, value: setting} pairs for looping.
+  # Each iteration writes one sysctl parameter.
+
+- name: "SC-7 | Disable IPv6 if not required"
+  ansible.posix.sysctl:
+    name: "{{ item }}"
+    value: "1"
+    sysctl_set: true
+    state: present
+    reload: true
+    sysctl_file: /etc/sysctl.d/99-stig-hardening.conf
+  loop:
+    - net.ipv6.conf.all.disable_ipv6
+    - net.ipv6.conf.default.disable_ipv6
+  # IPv6 is often not used in internal DoD networks.
+  # Disabling it reduces attack surface (CM-7).
+  # NOTE: EKS with dual-stack networking may require IPv6 — check first.
+  when: false  # Disabled by default — enable if IPv6 not needed
+
+- name: "SC-7 | Restrict core dumps"
+  ansible.builtin.lineinfile:
+    path: /etc/security/limits.conf
+    regexp: '^\*\s+hard\s+core'
+    line: '*                hard    core            0'
+  # Core dumps can contain sensitive data (passwords in memory,
+  # encryption keys, etc.). Disabling them prevents data leakage
+  # if a process crashes.
