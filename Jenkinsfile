@@ -9,7 +9,7 @@
 //   4. Trivy Scan      — container vulnerability scanning
 //   5. OpenSCAP STIG   — DISA STIG compliance check
 //   6. Push to ECR     — tag + push image to registry
-//   7. Deploy to EKS   — rolling update via kubectl
+//   7. Deploy to EKS   — Helm upgrade with atomic rollback
 //
 // Security gates (pipeline FAILS if these don't pass):
 //   - Trivy: no CRITICAL or HIGH vulnerabilities
